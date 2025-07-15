@@ -1,167 +1,93 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>The Development of an NFC-Based Inventory and Ordering System</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-      background: #f2f2f2;
-    }
-    .container {
-      background: white;
-      padding: 20px;
-      border-radius: 12px;
-      max-width: 600px;
-      margin: auto;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    h1 { text-align: center; }
-    button {
-      margin: 5px;
-      padding: 10px 20px;
-      font-size: 16px;
-    }
-    .hidden { display: none; }
-    input[type="number"] {
-      width: 60px;
-    }
-    .item { margin: 10px 0; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NFC Inventory & Ordering System</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+  h1 { text-align: center; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+  th { background-color: #f4f4f4; }
+  button { padding: 6px 12px; cursor: pointer; }
+  #message { margin-bottom: 20px; color: green; font-weight: bold; }
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>The Development of an NFC-Based Inventory and Ordering System</h1>
-    <div id="app"></div>
-  </div>
 
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const role = params.get("role");
-    const product = params.get("product");
-    const SHEET_API = "YOUR_GOOGLE_APPS_SCRIPT_URL"; // <-- Replace this
+<h1>NFC Inventory & Ordering System</h1>
 
-    const products = {
-      applejuice: { name: "Apple Juice", price: 20 },
-      water: { name: "Water", price: 10 }
-    };
+<div id="message"></div>
 
-    const app = document.getElementById("app");
+<h2>Available Items</h2>
+<table id="inventoryTable">
+  <thead>
+    <tr>
+      <th>Item Name</th>
+      <th>Stock</th>
+      <th>Price (THB)</th>
+      <th>Order Quantity</th>
+      <th>Order</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Items will load here -->
+  </tbody>
+</table>
 
-    function showMainSelector() {
-      app.innerHTML = `
-        <h2>Select Role</h2>
-        <button onclick="promptAdmin()">Admin</button>
-        <button onclick="location.href='?role=customer'">Customer</button>
-      `;
-    }
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbzm4FnYd_EeEljlgUKZ4R1sZJdd2kOKWMwHLz1BZURxToJ0yJ2ZfSI7jRun-bZw2etxgg/exec';
 
-    function promptAdmin() {
-      const code = prompt("Enter admin code:");
-      if (code === "12345") {
-        location.href = "?role=admin";
-      } else {
-        alert("Incorrect code");
-      }
-    }
+async function fetchInventory() {
+  try {
+    const response = await fetch(`${API_URL}?action=getInventory`);
+    const items = await response.json();
+    populateTable(items);
+  } catch (error) {
+    console.error('Error fetching inventory:', error);
+  }
+}
 
-    function showAdminPage() {
-      app.innerHTML = `<h2>Admin Panel</h2>`;
-      Object.keys(products).forEach(key => {
-        const p = products[key];
-        const section = document.createElement("div");
-        section.innerHTML = `
-          <div class="item"><strong>${p.name}</strong> (฿${p.price})<br>
-            <button onclick="updateStock('${key}', 1)">Add +1</button>
-            <button onclick="updateStock('${key}', -1)">Reduce -1</button>
-          </div>`;
-        app.appendChild(section);
-      });
-    }
+function populateTable(items) {
+  const tbody = document.querySelector("#inventoryTable tbody");
+  tbody.innerHTML = "";
+  items.forEach(item => {
+    let tr = document.createElement("tr");
 
-    function updateStock(product, change) {
-      fetch(SHEET_API + "?action=updateStock", {
-        method: "POST",
-        body: JSON.stringify({ product, change }),
-      })
-      .then(res => res.text())
-      .then(data => alert("Stock updated: " + data))
-      .catch(err => alert("Error: " + err));
-    }
+    tr.innerHTML = `
+      <td>${item.ItemName}</td>
+      <td id="stock-${item.ItemName}">${item.Stock}</td>
+      <td>${item.Price}</td>
+      <td><input type="number" id="qty-${item.ItemName}" min="1" max="${item.Stock}" value="1" style="width:60px" /></td>
+      <td><button onclick="submitOrder('${item.ItemName}')">Order</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
 
-    function showProductPage(productKey) {
-      const p = products[productKey];
-      app.innerHTML = `
-        <h2>${p.name}</h2>
-        <p>Price: ฿${p.price}</p>
-        <label>Quantity: <input type="number" id="qty" value="1" min="1"/></label><br><br>
-        <button onclick="addToCart('${productKey}')">Add to Order</button>
-        <button onclick="location.href='?role=customer'">Back to Order</button>
-      `;
-    }
+async function submitOrder(itemName) {
+  const qtyInput = document.getElementById(`qty-${itemName}`);
+  const quantity = parseInt(qtyInput.value);
+  const stockElem = document.getElementById(`stock-${itemName}`);
+  const currentStock = parseInt(stockElem.textContent);
 
-    function addToCart(productKey) {
-      const qty = parseInt(document.getElementById("qty").value);
-      if (qty < 1) return alert("Invalid quantity");
-      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-      const item = products[productKey];
-      cart.push({ product: item.name, qty, price: item.price });
-      localStorage.setItem("cart", JSON.stringify(cart));
-      alert("Item added to order");
-      location.href = "?role=customer";
-    }
+  if (quantity <= 0 || quantity > currentStock) {
+    alert("Invalid quantity");
+    return;
+  }
 
-    function showCustomerPage() {
-      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-      if (cart.length === 0) {
-        app.innerHTML = `
-          <h2>Order Summary</h2>
-          <p>No items added yet. Tap NFC product tags.</p>
-        `;
-        return;
-      }
+  const orderData = {
+    itemName: itemName,
+    quantity: quantity
+  };
 
-      let html = "<h2>Order Summary</h2><ul>";
-      let total = 0;
-      cart.forEach(item => {
-        html += `<li>${item.qty} × ${item.product} (฿${item.price})</li>`;
-        total += item.qty * item.price;
-      });
-      html += `</ul><p><strong>Total: ฿${total}</strong></p>`;
-      html += `<button onclick="submitOrder()">Send Order</button>
-               <button onclick="clearOrder()">Clear</button>`;
-      app.innerHTML = html;
-    }
-
-    function submitOrder() {
-      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-      const total = cart.reduce((sum, item) => sum + item.qty * item.price, 0);
-      fetch(SHEET_API + "?action=submitOrder", {
-        method: "POST",
-        body: JSON.stringify({ cart, total, time: new Date().toISOString() }),
-      })
-      .then(res => res.text())
-      .then(data => {
-        alert("Order sent: " + data);
-        localStorage.removeItem("cart");
-        location.href = "?role=customer";
-      })
-      .catch(err => alert("Error: " + err));
-    }
-
-    function clearOrder() {
-      localStorage.removeItem("cart");
-      location.reload();
-    }
-
-    // Routing logic
-    if (role === "main") showMainSelector();
-    else if (role === "admin") showAdminPage();
-    else if (role === "customer") showCustomerPage();
-    else if (product) showProductPage(product);
-    else app.innerHTML = `<p>Error: Invalid route</p>`;
-  </script>
-</body>
-</html>
+  try {
+    const response = await fetch(`${API_URL}?action=submitOrder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(orderData)
+    });
+    const text = await response.text();
+    if (text === "Order successful") {
+      document.getElementById("message").textContent = `Order placed for ${quant
