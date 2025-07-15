@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>The Development of an NFC-Based Inventory and Ordering System</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #f2f2f2;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      max-width: 600px;
+      margin: auto;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1 { text-align: center; }
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    .hidden { display: none; }
+    input[type="number"] {
+      width: 60px;
+    }
+    .item { margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>The Development of an NFC-Based Inventory and Ordering System</h1>
+    <div id="app"></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get("role");
+    const product = params.get("product");
+    const SHEET_API = "YOUR_GOOGLE_APPS_SCRIPT_URL"; // <-- Replace this
+
+    const products = {
+      applejuice: { name: "Apple Juice", price: 20 },
+      water: { name: "Water", price: 10 }
+    };
+
+    const app = document.getElementById("app");
+
+    function showMainSelector() {
+      app.innerHTML = `
+        <h2>Select Role</h2>
+        <button onclick="promptAdmin()">Admin</button>
+        <button onclick="location.href='?role=customer'">Customer</button>
+      `;
+    }
+
+    function promptAdmin() {
+      const code = prompt("Enter admin code:");
+      if (code === "12345") {
+        location.href = "?role=admin";
+      } else {
+        alert("Incorrect code");
+      }
+    }
+
+    function showAdminPage() {
+      app.innerHTML = `<h2>Admin Panel</h2>`;
+      Object.keys(products).forEach(key => {
+        const p = products[key];
+        const section = document.createElement("div");
+        section.innerHTML = `
+          <div class="item"><strong>${p.name}</strong> (฿${p.price})<br>
+            <button onclick="updateStock('${key}', 1)">Add +1</button>
+            <button onclick="updateStock('${key}', -1)">Reduce -1</button>
+          </div>`;
+        app.appendChild(section);
+      });
+    }
+
+    function updateStock(product, change) {
+      fetch(SHEET_API + "?action=updateStock", {
+        method: "POST",
+        body: JSON.stringify({ product, change }),
+      })
+      .then(res => res.text())
+      .then(data => alert("Stock updated: " + data))
+      .catch(err => alert("Error: " + err));
+    }
+
+    function showProductPage(productKey) {
+      const p = products[productKey];
+      app.innerHTML = `
+        <h2>${p.name}</h2>
+        <p>Price: ฿${p.price}</p>
+        <label>Quantity: <input type="number" id="qty" value="1" min="1"/></label><br><br>
+        <button onclick="addToCart('${productKey}')">Add to Order</button>
+        <button onclick="location.href='?role=customer'">Back to Order</button>
+      `;
+    }
+
+    function addToCart(productKey) {
+      const qty = parseInt(document.getElementById("qty").value);
+      if (qty < 1) return alert("Invalid quantity");
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      const item = products[productKey];
+      cart.push({ product: item.name, qty, price: item.price });
+      localStorage.setItem("cart", JSON.stringify(cart));
+      alert("Item added to order");
+      location.href = "?role=customer";
+    }
+
+    function showCustomerPage() {
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      if (cart.length === 0) {
+        app.innerHTML = `
+          <h2>Order Summary</h2>
+          <p>No items added yet. Tap NFC product tags.</p>
+        `;
+        return;
+      }
+
+      let html = "<h2>Order Summary</h2><ul>";
+      let total = 0;
+      cart.forEach(item => {
+        html += `<li>${item.qty} × ${item.product} (฿${item.price})</li>`;
+        total += item.qty * item.price;
+      });
+      html += `</ul><p><strong>Total: ฿${total}</strong></p>`;
+      html += `<button onclick="submitOrder()">Send Order</button>
+               <button onclick="clearOrder()">Clear</button>`;
+      app.innerHTML = html;
+    }
+
+    function submitOrder() {
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      const total = cart.reduce((sum, item) => sum + item.qty * item.price, 0);
+      fetch(SHEET_API + "?action=submitOrder", {
+        method: "POST",
+        body: JSON.stringify({ cart, total, time: new Date().toISOString() }),
+      })
+      .then(res => res.text())
+      .then(data => {
+        alert("Order sent: " + data);
+        localStorage.removeItem("cart");
+        location.href = "?role=customer";
+      })
+      .catch(err => alert("Error: " + err));
+    }
+
+    function clearOrder() {
+      localStorage.removeItem("cart");
+      location.reload();
+    }
+
+    // Routing logic
+    if (role === "main") showMainSelector();
+    else if (role === "admin") showAdminPage();
+    else if (role === "customer") showCustomerPage();
+    else if (product) showProductPage(product);
+    else app.innerHTML = `<p>Error: Invalid route</p>`;
+  </script>
+</body>
+</html>
