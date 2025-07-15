@@ -1,154 +1,185 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NFC Inventory & Ordering System</title>
-<style>
-  body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 10px; }
-  h1, h2 { text-align: center; }
-  #productInfo { margin-top: 20px; padding: 15px; border: 1px solid #ddd; display: none; }
-  label { display: block; margin-top: 10px; }
-  input[type=number] { width: 80px; padding: 5px; }
-  button { margin-top: 15px; padding: 8px 16px; font-size: 16px; cursor: pointer; }
-  #message { margin-top: 15px; font-weight: bold; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NFC Cart Ordering System</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+    h1, h2 { text-align: center; }
+    #cartTable, th, td { border: 1px solid #ccc; border-collapse: collapse; padding: 8px; }
+    #cartTable { width: 100%; margin-top: 20px; }
+    button { margin: 10px 0; padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    #message { margin-top: 15px; font-weight: bold; }
+  </style>
 </head>
 <body>
 
-<h1>NFC Inventory & Ordering System</h1>
+<h1>NFC Cart Ordering</h1>
 
 <button id="scanBtn">Scan NFC Tag</button>
-
 <div id="message"></div>
 
-<div id="productInfo">
-  <h2>Product Details</h2>
-  <p><strong>Name:</strong> <span id="prodName"></span></p>
-  <p><strong>Stock:</strong> <span id="prodStock"></span></p>
-  <p><strong>Price:</strong> ฿<span id="prodPrice"></span></p>
+<table id="cartTable" style="display:none;">
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Qty</th>
+      <th>Price</th>
+      <th>Total</th>
+    </tr>
+  </thead>
+  <tbody id="cartBody"></tbody>
+</table>
 
-  <label for="orderQty">Order Quantity:</label>
-  <input type="number" id="orderQty" min="1" value="1" />
+<h3 id="cartSummary" style="display:none;">Total: ฿<span id="totalPrice">0</span> (<span id="totalQty">0</span> items)</h3>
 
-  <button id="orderBtn">Place Order</button>
+<button id="submitBtn" style="display:none;">Place Order</button>
+
+<!-- Optional manual input for testing -->
+<div style="margin-top: 30px;">
+  <h3>Manual NFC ID Input (for testing)</h3>
+  <input type="text" id="manualInput" placeholder="Enter NFC ID" />
+  <button onclick="onManualInput()">Simulate Scan</button>
 </div>
 
 <script>
-  const API_URL = 'https://script.google.com/macros/s/AKfycbx3Fr8GIbYWjdwfH-TlLqLsAKLGxuUOeWIHiXNUod-j4LDPxrCElViBxyX7lrr1hfv8pQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbx3Fr8GIbYWjdwfH-TlLqLsAKLGxuUOeWIHiXNUod-j4LDPxrCElViBxyX7lrr1hfv8pQ/exec';
 
-  let inventory = [];
-  let currentProduct = null;
+let inventory = [];
+let cart = {};
 
-  async function fetchInventory() {
-    try {
-      const response = await fetch(`${API_URL}?action=getInventory`);
-      inventory = await response.json();
-      console.log("Inventory loaded:", inventory);
-    } catch (err) {
-      alert("Failed to load inventory: " + err.message);
-    }
+async function fetchInventory() {
+  try {
+    const res = await fetch(API_URL);
+    inventory = await res.json();
+    console.log("Inventory loaded:", inventory);
+  } catch (err) {
+    alert("Failed to load inventory.");
+  }
+}
+
+function updateCartDisplay() {
+  const cartTable = document.getElementById('cartTable');
+  const cartBody = document.getElementById('cartBody');
+  const summary = document.getElementById('cartSummary');
+  const totalQtyEl = document.getElementById('totalQty');
+  const totalPriceEl = document.getElementById('totalPrice');
+  const submitBtn = document.getElementById('submitBtn');
+
+  cartBody.innerHTML = '';
+  let totalQty = 0;
+  let totalPrice = 0;
+
+  for (const [itemName, item] of Object.entries(cart)) {
+    const row = document.createElement('tr');
+    const total = item.quantity * item.price;
+    row.innerHTML = `
+      <td>${itemName}</td>
+      <td>${item.quantity}</td>
+      <td>฿${item.price}</td>
+      <td>฿${total}</td>
+    `;
+    cartBody.appendChild(row);
+    totalQty += item.quantity;
+    totalPrice += total;
   }
 
-  async function scanNfcTag() {
-    if ('NDEFReader' in window) {
-      try {
-        const ndef = new NDEFReader();
-        await ndef.scan();
-        document.getElementById('message').textContent = 'Scan NFC tag now...';
+  if (totalQty > 0) {
+    cartTable.style.display = '';
+    summary.style.display = '';
+    submitBtn.style.display = '';
+    totalQtyEl.textContent = totalQty;
+    totalPriceEl.textContent = totalPrice.toFixed(2);
+  } else {
+    cartTable.style.display = 'none';
+    summary.style.display = 'none';
+    submitBtn.style.display = 'none';
+  }
+}
 
-        ndef.onreading = event => {
-          const serial = event.serialNumber.toUpperCase();
-          document.getElementById('message').textContent = 'NFC Tag scanned: ' + serial;
-          onNfcTagRead(serial);
-        };
-      } catch (error) {
-        alert('NFC scan failed: ' + error);
-      }
+function onNfcTagRead(serial) {
+  const id = serial.replace(/:/g, '').toUpperCase();
+  const product = inventory.find(item => item.NFC_ID.replace(/:/g, '').toUpperCase() === id);
+
+  if (!product) {
+    document.getElementById('message').textContent = 'Product not found for tag: ' + serial;
+    return;
+  }
+
+  const name = product.ItemName;
+  const stock = parseInt(product.Stock);
+  const price = parseFloat(product.Price);
+
+  if (!cart[name]) {
+    cart[name] = { quantity: 1, price };
+  } else {
+    if (cart[name].quantity < stock) {
+      cart[name].quantity += 1;
     } else {
-      alert('Web NFC not supported on this browser.');
+      alert(`Not enough stock for ${name}`);
     }
   }
 
-  function onNfcTagRead(serialNumber) {
-    const cleanSerial = serialNumber.replace(/:/g, '').toUpperCase();
+  document.getElementById('message').textContent = `${name} added to cart`;
+  updateCartDisplay();
+}
 
-    currentProduct = inventory.find(item => {
-      if (!item.NFC_ID) return false;
-      let itemId = item.NFC_ID.replace(/:/g, '').toUpperCase();
-      return itemId === cleanSerial;
+function onManualInput() {
+  const input = document.getElementById('manualInput').value.trim();
+  if (input) {
+    onNfcTagRead(input);
+  }
+}
+
+async function scanNfcTag() {
+  if ('NDEFReader' in window) {
+    try {
+      const ndef = new NDEFReader();
+      await ndef.scan();
+      document.getElementById('message').textContent = 'Scanning NFC tag...';
+      ndef.onreading = event => {
+        const serial = event.serialNumber;
+        onNfcTagRead(serial);
+      };
+    } catch (error) {
+      alert('NFC scan failed: ' + error);
+    }
+  } else {
+    alert('Web NFC not supported in this browser/device.');
+  }
+}
+
+async function submitCart() {
+  const cartArray = Object.entries(cart).map(([itemName, item]) => ({
+    itemName,
+    quantity: item.quantity
+  }));
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cart: cartArray })
     });
 
-    if (currentProduct) {
-      showProduct(currentProduct);
+    const text = await res.text();
+    if (text.includes('Order successful')) {
+      alert("✅ Order placed!");
+      cart = {};
+      updateCartDisplay();
     } else {
-      alert("Product not found for NFC tag: " + serialNumber);
-      hideProduct();
+      alert("❌ Order failed: " + text);
     }
+  } catch (err) {
+    alert("❌ Error sending order: " + err.message);
   }
+}
 
-  function showProduct(product) {
-    document.getElementById('productInfo').style.display = 'block';
-    document.getElementById('prodName').textContent = product.ItemName;
-    document.getElementById('prodStock').textContent = product.Stock;
-    document.getElementById('prodPrice').textContent = product.Price;
-    document.getElementById('orderQty').max = product.Stock > 0 ? product.Stock : 1;
-    document.getElementById('orderQty').value = 1;
-    document.getElementById('message').textContent = '';
-  }
+document.getElementById('scanBtn').addEventListener('click', scanNfcTag);
+document.getElementById('submitBtn').addEventListener('click', submitCart);
 
-  function hideProduct() {
-    document.getElementById('productInfo').style.display = 'none';
-  }
-
-  async function placeOrder() {
-    if (!currentProduct) {
-      alert("No product selected.");
-      return;
-    }
-
-    const qtyInput = document.getElementById('orderQty');
-    const quantity = parseInt(qtyInput.value);
-
-    if (quantity <= 0 || quantity > currentProduct.Stock) {
-      alert("Invalid quantity.");
-      return;
-    }
-
-    const orderData = {
-      itemName: currentProduct.ItemName,
-      quantity: quantity
-    };
-
-    try {
-      const res = await fetch(`${API_URL}?action=submitOrder`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(orderData)
-      });
-
-      const text = await res.text();
-      if (text === "Order successful") {
-        alert(`Order placed for ${quantity} x ${currentProduct.ItemName}`);
-
-        currentProduct.Stock -= quantity;
-        document.getElementById('prodStock').textContent = currentProduct.Stock;
-        qtyInput.max = currentProduct.Stock > 0 ? currentProduct.Stock : 1;
-        if (currentProduct.Stock === 0) {
-          alert("Product out of stock now.");
-        }
-      } else {
-        alert("Order failed: " + text);
-      }
-    } catch (err) {
-      alert("Order failed: " + err.message);
-    }
-  }
-
-  document.getElementById('scanBtn').addEventListener('click', scanNfcTag);
-  document.getElementById('orderBtn').addEventListener('click', placeOrder);
-
-  fetchInventory();
+fetchInventory();
 </script>
 
 </body>
