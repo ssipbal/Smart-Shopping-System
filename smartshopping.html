@@ -40,7 +40,6 @@
   let inventory = [];
   let currentProduct = null;
 
-  // Fetch inventory from backend
   async function fetchInventory() {
     try {
       const response = await fetch(`${API_URL}?action=getInventory`);
@@ -51,7 +50,6 @@
     }
   }
 
-  // Scan NFC Tag
   async function scanNfcTag() {
     if ('NDEFReader' in window) {
       try {
@@ -72,9 +70,7 @@
     }
   }
 
-  // Called when an NFC tag serial is read
   function onNfcTagRead(serialNumber) {
-    // Find product in inventory by NFC_ID (ignore case and colons)
     const cleanSerial = serialNumber.replace(/:/g, '').toUpperCase();
 
     currentProduct = inventory.find(item => {
@@ -91,8 +87,69 @@
     }
   }
 
-  // Show product info and order controls
   function showProduct(product) {
     document.getElementById('productInfo').style.display = 'block';
     document.getElementById('prodName').textContent = product.ItemName;
-    document.getElementById('prodStock').textContent = product.Sto
+    document.getElementById('prodStock').textContent = product.Stock;
+    document.getElementById('prodPrice').textContent = product.Price;
+    document.getElementById('orderQty').max = product.Stock > 0 ? product.Stock : 1;
+    document.getElementById('orderQty').value = 1;
+    document.getElementById('message').textContent = '';
+  }
+
+  function hideProduct() {
+    document.getElementById('productInfo').style.display = 'none';
+  }
+
+  async function placeOrder() {
+    if (!currentProduct) {
+      alert("No product selected.");
+      return;
+    }
+
+    const qtyInput = document.getElementById('orderQty');
+    const quantity = parseInt(qtyInput.value);
+
+    if (quantity <= 0 || quantity > currentProduct.Stock) {
+      alert("Invalid quantity.");
+      return;
+    }
+
+    const orderData = {
+      itemName: currentProduct.ItemName,
+      quantity: quantity
+    };
+
+    try {
+      const res = await fetch(`${API_URL}?action=submitOrder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderData)
+      });
+
+      const text = await res.text();
+      if (text === "Order successful") {
+        alert(`Order placed for ${quantity} x ${currentProduct.ItemName}`);
+
+        currentProduct.Stock -= quantity;
+        document.getElementById('prodStock').textContent = currentProduct.Stock;
+        qtyInput.max = currentProduct.Stock > 0 ? currentProduct.Stock : 1;
+        if (currentProduct.Stock === 0) {
+          alert("Product out of stock now.");
+        }
+      } else {
+        alert("Order failed: " + text);
+      }
+    } catch (err) {
+      alert("Order failed: " + err.message);
+    }
+  }
+
+  document.getElementById('scanBtn').addEventListener('click', scanNfcTag);
+  document.getElementById('orderBtn').addEventListener('click', placeOrder);
+
+  fetchInventory();
+</script>
+
+</body>
+</html>
